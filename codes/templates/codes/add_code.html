@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card mx-auto" style="max-width: 600px;">
+    <div class="card-header bg-primary text-white">
+        <h4 class="mb-0">Add Multiple Codes</h4>
+    </div>
+    <div class="card-body">
+        <form method="post">
+            {% csrf_token %}
+            <div class="mb-3">
+                {{ form.codes.label_tag }}
+                {{ form.codes }}
+                <small class="form-text text-muted">Example: ABC12345 XYZ67890 DEF45678</small>
+            </div>
+            <div class="d-grid gap-2">
+                <button type="submit" class="btn btn-primary btn-lg">Process Codes</button>
+                <a href="{% url 'view_codes' %}" class="btn btn-outline-secondary">View Stored Codes</a>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
