@@ -52,4 +52,4 @@ RUN mkdir -p /app/logs \
 EXPOSE 8000
 #RUN pwd && ls
 ### Command to run the application using Uvicorn
-CMD ["uvicorn", "base.asgi:application", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "project.asgi:application", "--host", "0.0.0.0", "--port", "8000"]
