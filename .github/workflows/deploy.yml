@@ -1,0 +1,127 @@
+
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  DOMAIN_NAME: ${{ vars.DOMAIN_NAME }}  # GitHub Actions variable for the domain name
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+      
+
+      
+      - name: Install sshpass
+        run: sudo apt-get install -y sshpass
+
+      - name: Ensure SSH Config Directory Exists
+        run: mkdir -p ~/.ssh
+
+      - name: Disable SSH Host Key Checking
+        run: echo "StrictHostKeyChecking no" >> ~/.ssh/config
+
+ 
+      - name: Transfer Built Files to Droplet
+        env:
+          SSHPASS: ${{ secrets.DROPLET_PASSWORD }}
+        run: |
+          REPO_NAME=$(basename -s .git https://github.com/${{ github.repository }})
+          sshpass -e rsync -avz --delete . ${{ secrets.DROPLET_USERNAME }}@${{ secrets.DROPLET_IP }}:/root/$REPO_NAME
+          
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: SSH Generate .env from GitHub Secrets
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          password: ${{ secrets.DROPLET_PASSWORD }}
+          script: |
+            sudo apt-get update && sudo apt-get install -y jq
+            echo '${{ toJSON(secrets) }}' | jq -r 'keys[] as $k | "\($k)=\(.[$k])"' > /root/.env
+          
+            # Get all variables (if you have them as well, use similar syntax for GitHub vars)
+            echo '${{ toJSON(vars) }}' | jq -r 'keys[] as $k | "\($k)=\(.[$k])"' >> /root/.env
+            
+      
+
+       # Install Docker and Docker Compose on the Droplet
+      - name: SSH Install Docker and Docker Compose
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          password: ${{ secrets.DROPLET_PASSWORD }}
+          script: |
+           # Check if Docker is installed
+           sudo apt-get update
+           if ! [ -x "$(command -v docker)" ]; then
+             echo "Docker is not installed. Installing Docker..."
+             #Install Docker and Docker Compose if not installed
+             #sudo apt-get install -y docker 
+             snap install docker
+           else
+             echo "Docker is already installed."
+           fi
+
+           # Install Docker Compose if not already installed
+           # if ! [ -x "$(command -v docker compose)" ]; then
+           #   sudo apt-get install -y docker compose
+           # else
+           #   echo "Docker Compose is already installed."
+           # fi
+      - name: Deploy via SSH and Run Docker Compose
+        uses: appleboy/ssh-action@v0.1.7
+        with:
+          host: ${{ secrets.DROPLET_IP }}
+          username: ${{ secrets.DROPLET_USERNAME }}
+          password: ${{ secrets.DROPLET_PASSWORD }}
+          script: |
+            # Load environment variables from .env file
+            export $(grep -v '^#' /root/.env | xargs)
+
+            # Use REPO_NAME dynamically by defining it
+            REPO_NAME=$(basename -s .git https://github.com/${{ github.repository }})
+
+            # Navigate to the project directory
+            echo "Navigating to /root/$REPO_NAME"
+            cd /root/$REPO_NAME || { echo "Directory /root/$REPO_NAME not found"; exit 1; }
+
+
+            # Replace placeholders {{DOMAIN_NAME}}  in NGINX configs
+            sed -i "s/{{DOMAIN_NAME}}/${{ vars.DOMAIN_NAME }}/g" nginx/conf/default.conf
+            sed -i "s/{{DOMAIN_NAME}}/${{ vars.DOMAIN_NAME }}/g" nginx/conf/ssl.conf.template
+  
+
+            
+            # Bring down any existing containers
+            DOMAIN_NAME=${{ vars.DOMAIN_NAME }}  docker compose down --rmi all || true
+
+            # Build and start containers with the updated configuration
+            DOMAIN_NAME=${{ vars.DOMAIN_NAME }} docker compose up -d --build 
+            
+            # Ensure the NGINX config is correct and reload NGINX
+            echo "Reloading NGINX..."
+            # docker exec $(docker ps -q --filter="name=nginx") nginx -s reload
+            docker restart nginx
+            
+            cp nginx/conf/ssl.conf.template nginx/conf/ssl.conf
+
+            
+
+
+            echo "Cleaning up old and unused Docker images"
+            # docker image prune -a -f
+
+
+            # Force exit to close the SSH session
+            exit 0

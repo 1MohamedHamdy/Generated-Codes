@@ -14,20 +14,17 @@ def add_code(request):
         form = CodeForm(request.POST)
         if form.is_valid():
             input_codes = form.cleaned_data["codes"]
-            # Split codes by space and clean
             new_codes = [code.strip().upper() for code in re.split(r'\s+', input_codes) if code.strip()]
             valid_codes = []
             duplicates = []
             invalid = []
             
-            # Validate codes
             for code in new_codes:
                 if len(code) != 8 or not code.isalnum():
                     invalid.append(code)
                 else:
                     valid_codes.append(code)
             
-            # Process valid codes
             if valid_codes:
                 with open(CODES_FILE, "a+") as file:
                     fcntl.flock(file, fcntl.LOCK_EX)
